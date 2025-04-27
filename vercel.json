@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/delete-old-transactions",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/generate-weekly-payments",
+      "schedule": "0 0 1 * *"
+    }
+  ]
+}
