@@ -28,7 +28,6 @@ export default function DashboardPage() {
   const { user, loading, refreshUser, isAuthenticated } = useAuth()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [balance, setBalance] = useState(0)
-  const [unpaidAmount, setUnpaidAmount] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [authChecked, setAuthChecked] = useState(false)
   const router = useRouter()
@@ -86,16 +85,6 @@ export default function DashboardPage() {
         const { data: balanceData, error: balanceError } = await supabase.rpc("get_total_balance")
         if (balanceError) throw balanceError
         setBalance(balanceData || 0)
-
-        // Fetch unpaid amount for the current user
-        if (user.role !== "admin") {
-          const { data: unpaidData, error: unpaidError } = await supabase.rpc("calculate_unpaid_amount", {
-            student_id_param: user.id,
-          })
-
-          if (unpaidError) throw unpaidError
-          setUnpaidAmount(unpaidData || 0)
-        }
       } catch (error) {
         console.error("Error fetching dashboard data:", error)
         toast.error("Failed to fetch dashboard data")
@@ -172,16 +161,6 @@ export default function DashboardPage() {
           <h2 className="text-white/70 mb-2">Saldo Saat Ini</h2>
           <p className="text-2xl font-bold text-white">{formatCurrency(balance)}</p>
         </Card>
-
-        {user && user.role !== "admin" && unpaidAmount !== null && unpaidAmount > 0 && (
-          <Card className="p-4 bg-amber-500/20 backdrop-blur-sm border-0 dark:bg-amber-500/10">
-            <h2 className="text-white/70 mb-2">Tunggakan Kas Mingguan</h2>
-            <p className="text-xl font-bold text-white">{formatCurrency(unpaidAmount)}</p>
-            <p className="text-white/70 text-sm mt-1">
-              Silahkan lakukan pembayaran dengan kelipatan Rp5.000 per minggu
-            </p>
-          </Card>
-        )}
 
         <h2 className="text-xl font-bold text-white mt-6 mb-2">Transaksi Terbaru</h2>
 
@@ -321,3 +300,4 @@ export default function DashboardPage() {
     </div>
   )
 }
+

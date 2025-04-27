@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -21,33 +21,12 @@ export default function AddTransaction() {
   const [description, setDescription] = useState("")
   const [type, setType] = useState<"income" | "expense">("income")
   const [isLoading, setIsLoading] = useState(false)
-  const [unpaidAmount, setUnpaidAmount] = useState<number | null>(null)
-
-  // Fetch unpaid amount for the current user
-  const fetchUnpaidAmount = useCallback(async () => {
-    if (!user) return
-
-    try {
-      const { data, error } = await supabase.rpc("calculate_unpaid_amount", {
-        student_id_param: user.id,
-      })
-
-      if (error) throw error
-      setUnpaidAmount(data)
-    } catch (error) {
-      console.error("Error fetching unpaid amount:", error)
-    }
-  }, [user])
 
   // Refresh user data when component mounts
   useEffect(() => {
     refreshUser()
-    if (user) {
-      fetchUnpaidAmount()
-    }
-  }, [refreshUser, user, fetchUnpaidAmount])
+  }, [refreshUser])
 
-  // Fix the description reassignment issue
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -61,59 +40,14 @@ export default function AddTransaction() {
       return
     }
 
-    // For income transactions, ensure amount is a multiple of 5000
-    if (type === "income") {
-      const amountValue = Number.parseFloat(amount)
-      if (amountValue % 5000 !== 0) {
-        toast.error("Jumlah pembayaran harus kelipatan Rp5.000")
-        return
-      }
-    }
-
     setIsLoading(true)
 
     try {
-      // Create a variable to hold the final description
-      let finalDescription = description
-
-      // For income transactions, process weekly payments first
-      if (type === "income") {
-        const token = localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token")
-        if (!token) {
-          toast.error("Token autentikasi tidak ditemukan")
-          return
-        }
-
-        // Process weekly payment
-        const paymentResponse = await fetch("/api/weekly-payments/process", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            studentId: user.id,
-            amount: Number.parseFloat(amount),
-          }),
-        })
-
-        if (!paymentResponse.ok) {
-          throw new Error("Failed to process weekly payment")
-        }
-
-        const paymentData = await paymentResponse.json()
-
-        // Update description to include weekly payment information
-        if (paymentData.weeksPaid > 0) {
-          finalDescription = `${description} (Pembayaran kas mingguan untuk ${paymentData.weeksPaid} minggu)`
-        }
-      }
-
       // Insert transaction directly into the transactions table
       const { error } = await supabase.from("transactions").insert({
         user_id: user.id,
         amount: Number.parseFloat(amount),
-        description: finalDescription,
+        description,
         type,
         status: "pending", // All transactions start as pending and need admin approval
       })
@@ -125,9 +59,6 @@ export default function AddTransaction() {
       setDescription("")
       setType("income")
       setIsOpen(false)
-
-      // Refresh unpaid amount after successful transaction
-      fetchUnpaidAmount()
     } catch (error) {
       console.error("Error adding transaction:", error)
       toast.error("Gagal menambahkan transaksi")
@@ -161,14 +92,6 @@ export default function AddTransaction() {
               className="bg-white/10 border-white/20 text-white placeholder:text-white/50"
               required
             />
-            {type === "income" && (
-              <p className="text-xs text-white/70 mt-1">Jumlah harus kelipatan Rp5.000 untuk pembayaran kas mingguan</p>
-            )}
-            {type === "income" && unpaidAmount !== null && unpaidAmount > 0 && (
-              <p className="text-xs text-amber-400 mt-1">
-                Tunggakan kas mingguan Anda: Rp{unpaidAmount.toLocaleString()}
-              </p>
-            )}
           </div>
 
           <div>
@@ -222,3 +145,4 @@ export default function AddTransaction() {
     </Dialog>
   )
 }
+
