@@ -48,82 +48,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshUser = useCallback(async () => {
     try {
       setIsLoading(true)
-
-      // Cek token dari localStorage (untuk "ingat saya") atau sessionStorage
-      let token: string | null = null
-      try {
-        // Replace:
-        // const token = localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token")
-        // With:
-        token = getToken()
-
-        if (!token) {
-          console.log("Auth Context - No token found")
-          setUser(null)
-          setRefreshAttempted(true)
-          setIsLoading(false)
-          return
-        }
-
-        // Rest of the token verification code...
-      } catch (storageError) {
-        console.error("Auth Context - Error accessing storage:", storageError)
+      let token = getToken()
+  
+      if (!token) {
+        console.log("Auth Context - No token found")
         setUser(null)
-        setRefreshAttempted(true)
-        setIsLoading(false)
         return
       }
-
-      console.log("Auth Context - Token found, fetching user data")
-
-      // Fetch user data from the server using the token
-      try {
-        const response = await fetch("/api/auth/me", {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Cache-Control": "no-cache",
-          },
-        })
-
-        console.log("Auth Context - /me API response status:", response.status)
-
-        if (response.ok) {
-          const data = await response.json()
-          console.log("Auth Context - User data from API:", data)
-
-          if (data.success && data.user) {
-            setUser(data.user)
-          } else {
-            console.log("Auth Context - Invalid user data")
-            setUser(null)
-          }
+  
+      const response = await fetch("/api/auth/me", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Cache-Control": "no-cache",
+        },
+      })
+  
+      if (response.status === 401) {
+        console.log("Auth Context - Token expired or unauthorized")
+        clearToken()
+        setUser(null)
+        return
+      }
+  
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.user) {
+          setUser(data.user)
         } else {
-          console.error("Auth Context - Error fetching user data:", response.status, response.statusText)
           setUser(null)
-
-          // Try to get more detailed error information
-          try {
-            const errorData = await response.json()
-            console.error("Auth Context - Error details:", errorData)
-          } catch (e) {
-            console.error("Auth Context - Could not parse error response:", e)
-          }
         }
-      } catch (fetchError) {
-        console.error("Auth Context - Error fetching user data:", fetchError)
+      } else {
+        console.error("Auth Context - Failed to fetch user:", response.status)
         setUser(null)
       }
-
-      setRefreshAttempted(true)
-      setIsLoading(false)
     } catch (error) {
-      console.error("Auth Context - Auth refresh error:", error)
+      console.error("Auth Context - refreshUser error:", error)
       setUser(null)
+    } finally {
       setRefreshAttempted(true)
       setIsLoading(false)
     }
   }, [])
+  // Use useCallback to memoize the refreshUser function
+  // and prevent unnecessary re-renders  
 
   // Check if user is logged in on initial load
   useEffect(() => {
