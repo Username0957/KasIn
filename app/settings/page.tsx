@@ -336,7 +336,7 @@ export default function SettingsPage() {
           </div>
         </Card>
 
-        <p className="text-center text-white/50 text-sm">Versi Aplikasi 1.7.7</p>
+        <p className="text-center text-white/50 text-sm">Versi Aplikasi 1.7.8</p>
       </main>
 
       {/* Username Change Dialog */}

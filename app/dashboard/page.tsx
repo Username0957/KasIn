@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState,useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { Loader2, Info } from "lucide-react";
 import BottomNav from "@/components/bottom-nav";
@@ -37,6 +37,7 @@ export default function DashboardPage() {
   const [authChecked, setAuthChecked] = useState(false);
   const router = useRouter();
   const [showAllTransactions, setShowAllTransactions] = useState(false);
+  const transactionsRef = useRef<HTMLDivElement>(null);
 
   // Transaction detail dialog
   const [selectedTransaction, setSelectedTransaction] =
@@ -119,6 +120,12 @@ export default function DashboardPage() {
       setIsLoading(false);
     }
   }, [user, authChecked, loading, showAllTransactions]);
+
+  useEffect(() => {
+    if (!showAllTransactions && transactionsRef.current) {
+      transactionsRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [showAllTransactions]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("id-ID", {
@@ -256,13 +263,15 @@ export default function DashboardPage() {
               </Card>
             ))}
 
-            {!showAllTransactions && transactions.length >= 5 && (
+            {transactions.length >= 5 && (
               <div className="text-center">
                 <button
-                  onClick={() => setShowAllTransactions(true)}
+                  onClick={() => setShowAllTransactions((prev) => !prev)}
                   className="mt-2 text-sm text-accent hover:underline"
                 >
-                  Lihat Semua Transaksi
+                  {showAllTransactions
+                    ? "Tutup Semua Transaksi"
+                    : "Lihat Semua Transaksi"}
                 </button>
               </div>
             )}
