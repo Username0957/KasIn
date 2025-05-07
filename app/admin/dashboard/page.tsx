@@ -12,7 +12,7 @@ import { formatRupiah } from "@/lib/utils"
 import { TransactionTable } from "@/components/admin/transaction-table"
 import { ExpenseForm } from "@/components/admin/expense-form"
 
-// Make sure this interface matches the one in components/admin/transaction-table.tsx
+// Define the Transaction interface
 interface User {
   id: string
   username: string
@@ -106,9 +106,11 @@ export default function AdminDashboard() {
         console.error("Failed to fetch summary data:", summaryResponse.status)
       }
 
-      // Try to fetch transactions with fallback approach
+      // Try multiple approaches to fetch transaction data
+      let transactionsLoaded = false
+
+      // Approach 1: Fetch transactions with status filter
       try {
-        // First attempt - using query parameters
         const fetchTransactionsWithStatus = async (status: string) => {
           const response = await fetch(`/api/admin/transactions?status=${status}`, {
             headers: {
@@ -124,26 +126,22 @@ export default function AdminDashboard() {
           return data.transactions || []
         }
 
-        // Try to fetch all transaction types
-        const [pending, approved, rejected] = await Promise.allSettled([
+        const [pending, approved, rejected] = await Promise.all([
           fetchTransactionsWithStatus("pending"),
           fetchTransactionsWithStatus("approved"),
           fetchTransactionsWithStatus("rejected"),
         ])
 
-        // Set data based on results
-        if (pending.status === "fulfilled") setPendingTransactions(pending.value)
-        if (approved.status === "fulfilled") setApprovedTransactions(approved.value)
-        if (rejected.status === "fulfilled") setRejectedTransactions(rejected.value)
-
-        // If any failed, throw error to try fallback
-        if (pending.status === "rejected" || approved.status === "rejected" || rejected.status === "rejected") {
-          throw new Error("Some transaction fetches failed")
-        }
+        setPendingTransactions(pending)
+        setApprovedTransactions(approved)
+        setRejectedTransactions(rejected)
+        transactionsLoaded = true
       } catch (error) {
-        console.error("Error with primary transaction fetch method:", error)
+        console.error("Error with approach 1:", error)
+      }
 
-        // Fallback approach - fetch all transactions and filter client-side
+      // Approach 2: Fetch all transactions and filter client-side
+      if (!transactionsLoaded) {
         try {
           const allTransactionsResponse = await fetch("/api/admin/all-transactions", {
             headers: {
@@ -181,11 +179,60 @@ export default function AdminDashboard() {
           setPendingTransactions(mappedTransactions.filter((t) => t.status === "pending"))
           setApprovedTransactions(mappedTransactions.filter((t) => t.status === "approved"))
           setRejectedTransactions(mappedTransactions.filter((t) => t.status === "rejected"))
-        } catch (fallbackError) {
-          console.error("Fallback transaction fetch also failed:", fallbackError)
-          setError("Gagal memuat data transaksi. Silakan coba lagi nanti.")
-          toast.error("Gagal memuat data transaksi")
+          transactionsLoaded = true
+        } catch (error) {
+          console.error("Error with approach 2:", error)
         }
+      }
+
+      // Approach 3: Fetch simple transactions (without joins) and filter client-side
+      if (!transactionsLoaded) {
+        try {
+          const simpleTransactionsResponse = await fetch("/api/admin/simple-transactions", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          })
+
+          if (!simpleTransactionsResponse.ok) {
+            throw new Error(`Failed to fetch simple transactions: ${simpleTransactionsResponse.status}`)
+          }
+
+          const simpleData = await simpleTransactionsResponse.json()
+          const simpleTransactions = simpleData.transactions || []
+
+          // Map the API response to match our Transaction interface
+          const mappedTransactions: Transaction[] = simpleTransactions.map((t: any) => ({
+            id: t.id.toString(),
+            amount: t.amount,
+            description: t.description,
+            type: t.type || "income", // Default to income if type is missing
+            status: t.status,
+            created_at: t.created_at,
+            // No user data in this simplified approach
+            user: {
+              id: t.user_id?.toString() || "unknown",
+              username: "unknown",
+              full_name: "Unknown User",
+              kelas: "N/A",
+              nis: "N/A",
+            },
+          }))
+
+          // Filter transactions by status
+          setPendingTransactions(mappedTransactions.filter((t) => t.status === "pending"))
+          setApprovedTransactions(mappedTransactions.filter((t) => t.status === "approved"))
+          setRejectedTransactions(mappedTransactions.filter((t) => t.status === "rejected"))
+          transactionsLoaded = true
+        } catch (error) {
+          console.error("Error with approach 3:", error)
+        }
+      }
+
+      // If all approaches failed, show error
+      if (!transactionsLoaded) {
+        setError("Gagal memuat data transaksi. Silakan coba lagi nanti.")
+        toast.error("Gagal memuat data transaksi")
       }
     } catch (error) {
       console.error("Error fetching dashboard data:", error)

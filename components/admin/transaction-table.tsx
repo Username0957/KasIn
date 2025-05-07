@@ -50,14 +50,19 @@ export function TransactionTable({ transactions, showActions = false, onApprove,
   const [showDebug, setShowDebug] = useState(false)
 
   const formatDate = (dateString: string): string => {
-    const date = new Date(dateString)
-    return new Intl.DateTimeFormat("id-ID", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date)
+    try {
+      const date = new Date(dateString)
+      return new Intl.DateTimeFormat("id-ID", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(date)
+    } catch (error) {
+      console.error("Error formatting date:", error)
+      return dateString || "Invalid Date"
+    }
   }
 
   const getStatusBadge = (status: string) => {
@@ -135,10 +140,12 @@ export function TransactionTable({ transactions, showActions = false, onApprove,
           success = true
         } else {
           errorMessage = data.message || `Failed to ${actionType} transaction`
+          setDebugInfo({ endpoint: "update-status", status: response.status, data })
         }
       } catch (error) {
         console.error("First attempt failed:", error)
         errorMessage = error instanceof Error ? error.message : "Unknown error"
+        setDebugInfo({ endpoint: "update-status", error: String(error) })
       }
 
       // Second try: direct endpoint if first attempt failed
@@ -161,10 +168,12 @@ export function TransactionTable({ transactions, showActions = false, onApprove,
             success = true
           } else {
             errorMessage = data.message || `Failed to ${actionType} transaction`
+            setDebugInfo({ endpoint: "direct", status: response.status, data })
           }
         } catch (error) {
           console.error("Second attempt failed:", error)
           errorMessage = error instanceof Error ? error.message : "Unknown error"
+          setDebugInfo({ endpoint: "direct", error: String(error) })
         }
       }
 
@@ -188,10 +197,12 @@ export function TransactionTable({ transactions, showActions = false, onApprove,
             success = true
           } else {
             errorMessage = data.message || `Failed to ${actionType} transaction`
+            setDebugInfo({ endpoint: "simple-update", status: response.status, data })
           }
         } catch (error) {
           console.error("Third attempt failed:", error)
           errorMessage = error instanceof Error ? error.message : "Unknown error"
+          setDebugInfo({ endpoint: "simple-update", error: String(error) })
         }
       }
 
