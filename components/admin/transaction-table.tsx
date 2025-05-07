@@ -112,36 +112,108 @@ export function TransactionTable({ transactions, showActions = false, onApprove,
         throw new Error("No auth token found")
       }
 
-      // Use the update-status endpoint
-      const response = await fetch("/api/admin/transactions/update-status", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          transactionId: selectedTransaction.id,
-          action: actionType,
-        }),
-      })
+      // Try multiple endpoints in sequence until one works
+      let success = false
+      let errorMessage = ""
 
-      const data = await response.json()
+      // First try: update-status endpoint
+      try {
+        const response = await fetch("/api/admin/transactions/update-status", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            transactionId: selectedTransaction.id,
+            action: actionType,
+          }),
+        })
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || `Failed to ${actionType} transaction`)
+        const data = await response.json()
+        if (response.ok && data.success) {
+          success = true
+        } else {
+          errorMessage = data.message || `Failed to ${actionType} transaction`
+        }
+      } catch (error) {
+        console.error("First attempt failed:", error)
+        errorMessage = error instanceof Error ? error.message : "Unknown error"
       }
 
-      toast.success(`Transaksi berhasil ${actionType === "approve" ? "disetujui" : "ditolak"}`)
+      // Second try: direct endpoint if first attempt failed
+      if (!success) {
+        try {
+          const endpoint =
+            actionType === "approve"
+              ? `/api/admin/transactions/${selectedTransaction.id}/approve`
+              : `/api/admin/transactions/${selectedTransaction.id}/reject`
 
-      // Call the parent component's callback functions if provided
-      if (actionType === "approve" && onApprove) {
-        onApprove(selectedTransaction.id)
-      } else if (actionType === "reject" && onReject) {
-        onReject(selectedTransaction.id)
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          })
+
+          const data = await response.json()
+          if (response.ok && data.success) {
+            success = true
+          } else {
+            errorMessage = data.message || `Failed to ${actionType} transaction`
+          }
+        } catch (error) {
+          console.error("Second attempt failed:", error)
+          errorMessage = error instanceof Error ? error.message : "Unknown error"
+        }
+      }
+
+      // Third try: simple-update endpoint if second attempt failed
+      if (!success) {
+        try {
+          const response = await fetch("/api/admin/transactions/simple-update", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              transactionId: selectedTransaction.id,
+              action: actionType,
+            }),
+          })
+
+          const data = await response.json()
+          if (response.ok && data.success) {
+            success = true
+          } else {
+            errorMessage = data.message || `Failed to ${actionType} transaction`
+          }
+        } catch (error) {
+          console.error("Third attempt failed:", error)
+          errorMessage = error instanceof Error ? error.message : "Unknown error"
+        }
+      }
+
+      if (success) {
+        toast.success(`Transaksi berhasil ${actionType === "approve" ? "disetujui" : "ditolak"}`)
+
+        // Call the parent component's callback functions if provided
+        if (actionType === "approve" && onApprove) {
+          onApprove(selectedTransaction.id)
+        } else if (actionType === "reject" && onReject) {
+          onReject(selectedTransaction.id)
+        }
+
+        setIsDialogOpen(false)
+      } else {
+        throw new Error(errorMessage)
       }
     } catch (error) {
       console.error(`Error ${actionType === "approve" ? "approving" : "rejecting"} transaction:`, error)
-      toast.error(`Gagal ${actionType === "approve" ? "menyetujui" : "menolak"} transaksi`)
+      toast.error(
+        `Gagal ${actionType === "approve" ? "menyetujui" : "menolak"} transaksi: ${error instanceof Error ? error.message : "Unknown error"}`,
+      )
       setShowDebug(true)
     } finally {
       setIsLoading(false)

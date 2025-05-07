@@ -12,11 +12,30 @@ import { formatRupiah } from "@/lib/utils"
 import { TransactionTable } from "@/components/admin/transaction-table"
 import { ExpenseForm } from "@/components/admin/expense-form"
 
+// Make sure this interface matches the one in components/admin/transaction-table.tsx
+interface User {
+  id: string
+  username: string
+  full_name: string
+  kelas?: string
+  nis?: string
+}
+
+interface Transaction {
+  id: string
+  amount: number
+  description: string
+  type: "income" | "expense"
+  status: "pending" | "approved" | "rejected"
+  created_at: string
+  user?: User
+}
+
 export default function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true)
-  const [pendingTransactions, setPendingTransactions] = useState([])
-  const [approvedTransactions, setApprovedTransactions] = useState([])
-  const [rejectedTransactions, setRejectedTransactions] = useState([])
+  const [pendingTransactions, setPendingTransactions] = useState<Transaction[]>([])
+  const [approvedTransactions, setApprovedTransactions] = useState<Transaction[]>([])
+  const [rejectedTransactions, setRejectedTransactions] = useState<Transaction[]>([])
   const [totalKas, setTotalKas] = useState(0)
   const [totalExpense, setTotalExpense] = useState(0)
   const [showExpenseForm, setShowExpenseForm] = useState(false)
@@ -65,60 +84,109 @@ export default function AdminDashboard() {
   const fetchDashboardData = async () => {
     setIsLoading(true)
     setError(null)
+
     try {
       const token = localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token")
       if (!token) {
         throw new Error("No auth token found")
       }
 
-      // Fetch pending transactions
-      const pendingResponse = await fetch("/api/admin/transactions?status=pending", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      // Fetch approved transactions
-      const approvedResponse = await fetch("/api/admin/transactions?status=approved", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      // Fetch rejected transactions
-      const rejectedResponse = await fetch("/api/admin/transactions?status=rejected", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      // Fetch summary data
+      // Fetch summary data first (this seems to work)
       const summaryResponse = await fetch("/api/admin/summary", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       })
 
-      if (!pendingResponse.ok || !approvedResponse.ok || !rejectedResponse.ok || !summaryResponse.ok) {
-        console.error("API Error:", {
-          pending: pendingResponse.status,
-          approved: approvedResponse.status,
-          rejected: rejectedResponse.status,
-          summary: summaryResponse.status,
-        })
-        throw new Error("Failed to fetch data")
+      if (summaryResponse.ok) {
+        const summaryData = await summaryResponse.json()
+        setTotalKas(summaryData.totalKas || 0)
+        setTotalExpense(summaryData.totalExpense || 0)
+      } else {
+        console.error("Failed to fetch summary data:", summaryResponse.status)
       }
 
-      const pendingData = await pendingResponse.json()
-      const approvedData = await approvedResponse.json()
-      const rejectedData = await rejectedResponse.json()
-      const summaryData = await summaryResponse.json()
+      // Try to fetch transactions with fallback approach
+      try {
+        // First attempt - using query parameters
+        const fetchTransactionsWithStatus = async (status: string) => {
+          const response = await fetch(`/api/admin/transactions?status=${status}`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          })
 
-      setPendingTransactions(pendingData.transactions || [])
-      setApprovedTransactions(approvedData.transactions || [])
-      setRejectedTransactions(rejectedData.transactions || [])
-      setTotalKas(summaryData.totalKas || 0)
-      setTotalExpense(summaryData.totalExpense || 0)
+          if (!response.ok) {
+            throw new Error(`Failed to fetch ${status} transactions: ${response.status}`)
+          }
+
+          const data = await response.json()
+          return data.transactions || []
+        }
+
+        // Try to fetch all transaction types
+        const [pending, approved, rejected] = await Promise.allSettled([
+          fetchTransactionsWithStatus("pending"),
+          fetchTransactionsWithStatus("approved"),
+          fetchTransactionsWithStatus("rejected"),
+        ])
+
+        // Set data based on results
+        if (pending.status === "fulfilled") setPendingTransactions(pending.value)
+        if (approved.status === "fulfilled") setApprovedTransactions(approved.value)
+        if (rejected.status === "fulfilled") setRejectedTransactions(rejected.value)
+
+        // If any failed, throw error to try fallback
+        if (pending.status === "rejected" || approved.status === "rejected" || rejected.status === "rejected") {
+          throw new Error("Some transaction fetches failed")
+        }
+      } catch (error) {
+        console.error("Error with primary transaction fetch method:", error)
+
+        // Fallback approach - fetch all transactions and filter client-side
+        try {
+          const allTransactionsResponse = await fetch("/api/admin/all-transactions", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          })
+
+          if (!allTransactionsResponse.ok) {
+            throw new Error(`Failed to fetch all transactions: ${allTransactionsResponse.status}`)
+          }
+
+          const allData = await allTransactionsResponse.json()
+          const allTransactions = allData.transactions || []
+
+          // Map the API response to match our Transaction interface
+          const mappedTransactions: Transaction[] = allTransactions.map((t: any) => ({
+            id: t.id.toString(),
+            amount: t.amount,
+            description: t.description,
+            type: t.type || "income", // Default to income if type is missing
+            status: t.status,
+            created_at: t.created_at,
+            user: t.user
+              ? {
+                  id: t.user.id.toString(),
+                  username: t.user.username,
+                  full_name: t.user.full_name,
+                  kelas: t.user.kelas,
+                  nis: t.user.nis,
+                }
+              : undefined,
+          }))
+
+          // Filter transactions by status
+          setPendingTransactions(mappedTransactions.filter((t) => t.status === "pending"))
+          setApprovedTransactions(mappedTransactions.filter((t) => t.status === "approved"))
+          setRejectedTransactions(mappedTransactions.filter((t) => t.status === "rejected"))
+        } catch (fallbackError) {
+          console.error("Fallback transaction fetch also failed:", fallbackError)
+          setError("Gagal memuat data transaksi. Silakan coba lagi nanti.")
+          toast.error("Gagal memuat data transaksi")
+        }
+      }
     } catch (error) {
       console.error("Error fetching dashboard data:", error)
       setError("Gagal memuat data dashboard. Silakan coba lagi nanti.")
@@ -167,7 +235,6 @@ export default function AdminDashboard() {
         throw new Error(errorData.message || "Failed to add expense")
       }
 
-      const data = await response.json()
       toast.success("Pengeluaran berhasil ditambahkan")
       setShowExpenseForm(false)
       fetchDashboardData()
