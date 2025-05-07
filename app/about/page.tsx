@@ -56,7 +56,7 @@ export default function AboutPage() {
             </ul>
 
             <h3 className="text-lg font-semibold text-white">Versi</h3>
-            <p>Versi 1.7.7\8</p>
+            <p>Versi 1.7.8</p>
 
             <h3 className="text-lg font-semibold text-white">Kontak</h3>
             <p>Untuk pertanyaan atau bantuan, silakan hubungi admin.</p>
