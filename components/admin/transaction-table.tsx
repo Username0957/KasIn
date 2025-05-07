@@ -112,8 +112,8 @@ export function TransactionTable({ transactions, showActions = false, onApprove,
         throw new Error("No auth token found")
       }
 
-      // Use the unified update-status endpoint
-      const response = await fetch("/api/admin/transactions/update-status/route", {
+      // Use the update-status endpoint
+      const response = await fetch("/api/admin/transactions/update-status", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

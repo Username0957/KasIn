@@ -6,7 +6,7 @@ import { AdminLayout } from "@/components/admin/admin-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Loader2, ArrowDownCircle, ArrowUpCircle } from "lucide-react"
+import { Loader2, ArrowDownCircle, ArrowUpCircle, AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
 import { formatRupiah } from "@/lib/utils"
 import { TransactionTable } from "@/components/admin/transaction-table"
@@ -20,6 +20,7 @@ export default function AdminDashboard() {
   const [totalKas, setTotalKas] = useState(0)
   const [totalExpense, setTotalExpense] = useState(0)
   const [showExpenseForm, setShowExpenseForm] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -63,6 +64,7 @@ export default function AdminDashboard() {
 
   const fetchDashboardData = async () => {
     setIsLoading(true)
+    setError(null)
     try {
       const token = localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token")
       if (!token) {
@@ -98,6 +100,12 @@ export default function AdminDashboard() {
       })
 
       if (!pendingResponse.ok || !approvedResponse.ok || !rejectedResponse.ok || !summaryResponse.ok) {
+        console.error("API Error:", {
+          pending: pendingResponse.status,
+          approved: approvedResponse.status,
+          rejected: rejectedResponse.status,
+          summary: summaryResponse.status,
+        })
         throw new Error("Failed to fetch data")
       }
 
@@ -113,6 +121,7 @@ export default function AdminDashboard() {
       setTotalExpense(summaryData.totalExpense || 0)
     } catch (error) {
       console.error("Error fetching dashboard data:", error)
+      setError("Gagal memuat data dashboard. Silakan coba lagi nanti.")
       toast.error("Gagal memuat data dashboard")
     } finally {
       setIsLoading(false)
@@ -174,6 +183,21 @@ export default function AdminDashboard() {
         <div className="flex h-[80vh] items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <span className="ml-2">Memuat data...</span>
+        </div>
+      </AdminLayout>
+    )
+  }
+
+  if (error) {
+    return (
+      <AdminLayout>
+        <div className="container mx-auto px-4 py-6">
+          <div className="flex flex-col items-center justify-center h-[50vh] text-center">
+            <AlertTriangle className="h-12 w-12 text-yellow-500 mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Terjadi Kesalahan</h2>
+            <p className="text-gray-600 mb-4">{error}</p>
+            <Button onClick={fetchDashboardData}>Coba Lagi</Button>
+          </div>
         </div>
       </AdminLayout>
     )
