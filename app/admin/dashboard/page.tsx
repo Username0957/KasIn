@@ -126,6 +126,16 @@ export default function AdminDashboard() {
 
   const handleAddExpense = async (expenseData: { amount: number; description: string }) => {
     try {
+      if (!expenseData.amount || expenseData.amount <= 0) {
+        toast.error("Jumlah pengeluaran harus lebih dari 0")
+        return
+      }
+
+      if (!expenseData.description.trim()) {
+        toast.error("Deskripsi pengeluaran tidak boleh kosong")
+        return
+      }
+
       const token = localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token")
       if (!token) {
         throw new Error("No auth token found")
@@ -137,19 +147,24 @@ export default function AdminDashboard() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(expenseData),
+        body: JSON.stringify({
+          ...expenseData,
+          type: "expense", // Ensure type is set correctly
+        }),
       })
 
       if (!response.ok) {
-        throw new Error("Failed to add expense")
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Failed to add expense")
       }
 
+      const data = await response.json()
       toast.success("Pengeluaran berhasil ditambahkan")
       setShowExpenseForm(false)
       fetchDashboardData()
     } catch (error) {
       console.error("Error adding expense:", error)
-      toast.error("Gagal menambahkan pengeluaran")
+      toast.error(`Gagal menambahkan pengeluaran: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
@@ -209,7 +224,11 @@ export default function AdminDashboard() {
           </Card>
         </div>
 
-        <div className="mt-6 flex justify-end">
+        <div className="mt-6 flex justify-between">
+          <Button onClick={fetchDashboardData} variant="outline">
+            <Loader2 className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+            Refresh Data
+          </Button>
           <Button onClick={() => setShowExpenseForm(!showExpenseForm)}>
             {showExpenseForm ? "Batal" : "Tambah Pengeluaran"}
           </Button>

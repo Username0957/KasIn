@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { CheckCircle, XCircle, AlertCircle, CheckCircle2, CircleXIcon as XCircle2, Loader2 } from "lucide-react"
+import { AlertCircle, CheckCircle2, CircleXIcon as XCircle2, Loader2 } from "lucide-react"
 import { formatRupiah } from "@/lib/utils"
 import {
   Dialog,
@@ -112,93 +112,32 @@ export function TransactionTable({ transactions, showActions = false, onApprove,
         throw new Error("No auth token found")
       }
 
-      // First, try to get debug info
-      try {
-        const debugResponse = await fetch("/api/debug/transaction-status", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            transactionId: selectedTransaction.id,
-            action: actionType,
-          }),
-        })
+      // Use the unified update-status endpoint
+      const response = await fetch("/api/admin/transactions/update-status/route", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          transactionId: selectedTransaction.id,
+          action: actionType,
+        }),
+      })
 
-        if (debugResponse.ok) {
-          const debugData = await debugResponse.json()
-          setDebugInfo(debugData)
-        }
-      } catch (debugError) {
-        console.error("Debug error:", debugError)
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || `Failed to ${actionType} transaction`)
       }
 
-      // Try the simplified endpoint first
-      try {
-        const response = await fetch("/api/admin/transactions/simple-update", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            transactionId: selectedTransaction.id,
-            action: actionType,
-          }),
-        })
+      toast.success(`Transaksi berhasil ${actionType === "approve" ? "disetujui" : "ditolak"}`)
 
-        const data = await response.json()
-
-        if (response.ok && data.success) {
-          toast.success(`Transaksi berhasil ${actionType === "approve" ? "disetujui" : "ditolak"}`)
-
-          // Call the parent component's callback functions if provided
-          if (actionType === "approve" && onApprove) {
-            onApprove(selectedTransaction.id)
-          } else if (actionType === "reject" && onReject) {
-            onReject(selectedTransaction.id)
-          }
-
-          setIsDialogOpen(false)
-          setIsLoading(false)
-          return
-        }
-
-        // If we get here, the simplified endpoint failed, so we'll try the direct endpoints
-        throw new Error(data.message || `Failed to ${actionType} transaction`)
-      } catch (simpleError) {
-        console.error("Simple update failed:", simpleError)
-
-        // Try the direct endpoints as fallback
-        const endpoint =
-          actionType === "approve"
-            ? `/api/admin/transactions/${selectedTransaction.id}/approve`
-            : `/api/admin/transactions/${selectedTransaction.id}/reject`
-
-        const directResponse = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        })
-
-        const directData = await directResponse.json()
-
-        if (!directResponse.ok || !directData.success) {
-          throw new Error(directData.message || `Failed to ${actionType} transaction using direct endpoint`)
-        }
-
-        toast.success(
-          `Transaksi berhasil ${actionType === "approve" ? "disetujui" : "ditolak"} (menggunakan endpoint langsung)`,
-        )
-
-        // Call the parent component's callback functions if provided
-        if (actionType === "approve" && onApprove) {
-          onApprove(selectedTransaction.id)
-        } else if (actionType === "reject" && onReject) {
-          onReject(selectedTransaction.id)
-        }
+      // Call the parent component's callback functions if provided
+      if (actionType === "approve" && onApprove) {
+        onApprove(selectedTransaction.id)
+      } else if (actionType === "reject" && onReject) {
+        onReject(selectedTransaction.id)
       }
     } catch (error) {
       console.error(`Error ${actionType === "approve" ? "approving" : "rejecting"} transaction:`, error)
@@ -241,24 +180,24 @@ export function TransactionTable({ transactions, showActions = false, onApprove,
                 {showActions && (
                   <TableCell className="whitespace-nowrap">
                     <div className="flex flex-col sm:flex-row gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-green-500 hover:bg-green-50 hover:text-green-600"
-                        onClick={() => handleAction(transaction, "approve")}
+                      <select
+                        className="px-2 py-1 rounded border border-gray-300 text-sm"
+                        defaultValue=""
+                        onChange={(e) => {
+                          const action = e.target.value
+                          if (action === "approve" || action === "reject") {
+                            handleAction(transaction, action as "approve" | "reject")
+                            // Reset select after action
+                            e.target.value = ""
+                          }
+                        }}
                       >
-                        <CheckCircle className="mr-1 h-4 w-4" />
-                        Setujui
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-red-500 hover:bg-red-50 hover:text-red-600"
-                        onClick={() => handleAction(transaction, "reject")}
-                      >
-                        <XCircle className="mr-1 h-4 w-4" />
-                        Tolak
-                      </Button>
+                        <option value="" disabled>
+                          Pilih Aksi
+                        </option>
+                        <option value="approve">Setujui</option>
+                        <option value="reject">Tolak</option>
+                      </select>
                     </div>
                   </TableCell>
                 )}
