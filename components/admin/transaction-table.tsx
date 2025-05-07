@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { AlertCircle, CheckCircle2, CircleXIcon as XCircle2, Loader2 } from "lucide-react"
+import { CheckCircle, XCircle, AlertCircle, CheckCircle2, CircleXIcon as XCircle2, Loader2 } from "lucide-react"
 import { formatRupiah } from "@/lib/utils"
 import {
   Dialog,
@@ -50,19 +50,14 @@ export function TransactionTable({ transactions, showActions = false, onApprove,
   const [showDebug, setShowDebug] = useState(false)
 
   const formatDate = (dateString: string): string => {
-    try {
-      const date = new Date(dateString)
-      return new Intl.DateTimeFormat("id-ID", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(date)
-    } catch (error) {
-      console.error("Error formatting date:", error)
-      return dateString || "Invalid Date"
-    }
+    const date = new Date(dateString)
+    return new Intl.DateTimeFormat("id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date)
   }
 
   const getStatusBadge = (status: string) => {
@@ -117,13 +112,31 @@ export function TransactionTable({ transactions, showActions = false, onApprove,
         throw new Error("No auth token found")
       }
 
-      // Try multiple endpoints in sequence until one works
-      let success = false
-      let errorMessage = ""
-
-      // First try: update-status endpoint
+      // First, try to get debug info
       try {
-        const response = await fetch("/api/admin/transactions/update-status", {
+        const debugResponse = await fetch("/api/debug/transaction-status", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            transactionId: selectedTransaction.id,
+            action: actionType,
+          }),
+        })
+
+        if (debugResponse.ok) {
+          const debugData = await debugResponse.json()
+          setDebugInfo(debugData)
+        }
+      } catch (debugError) {
+        console.error("Debug error:", debugError)
+      }
+
+      // Try the simplified endpoint first
+      try {
+        const response = await fetch("/api/admin/transactions/simple-update", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -136,78 +149,49 @@ export function TransactionTable({ transactions, showActions = false, onApprove,
         })
 
         const data = await response.json()
+
         if (response.ok && data.success) {
-          success = true
-        } else {
-          errorMessage = data.message || `Failed to ${actionType} transaction`
-          setDebugInfo({ endpoint: "update-status", status: response.status, data })
-        }
-      } catch (error) {
-        console.error("First attempt failed:", error)
-        errorMessage = error instanceof Error ? error.message : "Unknown error"
-        setDebugInfo({ endpoint: "update-status", error: String(error) })
-      }
+          toast.success(`Transaksi berhasil ${actionType === "approve" ? "disetujui" : "ditolak"}`)
 
-      // Second try: direct endpoint if first attempt failed
-      if (!success) {
-        try {
-          const endpoint =
-            actionType === "approve"
-              ? `/api/admin/transactions/${selectedTransaction.id}/approve`
-              : `/api/admin/transactions/${selectedTransaction.id}/reject`
-
-          const response = await fetch(endpoint, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          })
-
-          const data = await response.json()
-          if (response.ok && data.success) {
-            success = true
-          } else {
-            errorMessage = data.message || `Failed to ${actionType} transaction`
-            setDebugInfo({ endpoint: "direct", status: response.status, data })
+          // Call the parent component's callback functions if provided
+          if (actionType === "approve" && onApprove) {
+            onApprove(selectedTransaction.id)
+          } else if (actionType === "reject" && onReject) {
+            onReject(selectedTransaction.id)
           }
-        } catch (error) {
-          console.error("Second attempt failed:", error)
-          errorMessage = error instanceof Error ? error.message : "Unknown error"
-          setDebugInfo({ endpoint: "direct", error: String(error) })
+
+          setIsDialogOpen(false)
+          setIsLoading(false)
+          return
         }
-      }
 
-      // Third try: simple-update endpoint if second attempt failed
-      if (!success) {
-        try {
-          const response = await fetch("/api/admin/transactions/simple-update", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              transactionId: selectedTransaction.id,
-              action: actionType,
-            }),
-          })
+        // If we get here, the simplified endpoint failed, so we'll try the direct endpoints
+        throw new Error(data.message || `Failed to ${actionType} transaction`)
+      } catch (simpleError) {
+        console.error("Simple update failed:", simpleError)
 
-          const data = await response.json()
-          if (response.ok && data.success) {
-            success = true
-          } else {
-            errorMessage = data.message || `Failed to ${actionType} transaction`
-            setDebugInfo({ endpoint: "simple-update", status: response.status, data })
-          }
-        } catch (error) {
-          console.error("Third attempt failed:", error)
-          errorMessage = error instanceof Error ? error.message : "Unknown error"
-          setDebugInfo({ endpoint: "simple-update", error: String(error) })
+        // Try the direct endpoints as fallback
+        const endpoint =
+          actionType === "approve"
+            ? `/api/admin/transactions/${selectedTransaction.id}/approve`
+            : `/api/admin/transactions/${selectedTransaction.id}/reject`
+
+        const directResponse = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        const directData = await directResponse.json()
+
+        if (!directResponse.ok || !directData.success) {
+          throw new Error(directData.message || `Failed to ${actionType} transaction using direct endpoint`)
         }
-      }
 
-      if (success) {
-        toast.success(`Transaksi berhasil ${actionType === "approve" ? "disetujui" : "ditolak"}`)
+        toast.success(
+          `Transaksi berhasil ${actionType === "approve" ? "disetujui" : "ditolak"} (menggunakan endpoint langsung)`,
+        )
 
         // Call the parent component's callback functions if provided
         if (actionType === "approve" && onApprove) {
@@ -215,16 +199,10 @@ export function TransactionTable({ transactions, showActions = false, onApprove,
         } else if (actionType === "reject" && onReject) {
           onReject(selectedTransaction.id)
         }
-
-        setIsDialogOpen(false)
-      } else {
-        throw new Error(errorMessage)
       }
     } catch (error) {
       console.error(`Error ${actionType === "approve" ? "approving" : "rejecting"} transaction:`, error)
-      toast.error(
-        `Gagal ${actionType === "approve" ? "menyetujui" : "menolak"} transaksi: ${error instanceof Error ? error.message : "Unknown error"}`,
-      )
+      toast.error(`Gagal ${actionType === "approve" ? "menyetujui" : "menolak"} transaksi`)
       setShowDebug(true)
     } finally {
       setIsLoading(false)
@@ -263,24 +241,24 @@ export function TransactionTable({ transactions, showActions = false, onApprove,
                 {showActions && (
                   <TableCell className="whitespace-nowrap">
                     <div className="flex flex-col sm:flex-row gap-2">
-                      <select
-                        className="px-2 py-1 rounded border border-gray-300 text-sm"
-                        defaultValue=""
-                        onChange={(e) => {
-                          const action = e.target.value
-                          if (action === "approve" || action === "reject") {
-                            handleAction(transaction, action as "approve" | "reject")
-                            // Reset select after action
-                            e.target.value = ""
-                          }
-                        }}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-green-500 hover:bg-green-50 hover:text-green-600"
+                        onClick={() => handleAction(transaction, "approve")}
                       >
-                        <option value="" disabled>
-                          Pilih Aksi
-                        </option>
-                        <option value="approve">Setujui</option>
-                        <option value="reject">Tolak</option>
-                      </select>
+                        <CheckCircle className="mr-1 h-4 w-4" />
+                        Setujui
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-red-500 hover:bg-red-50 hover:text-red-600"
+                        onClick={() => handleAction(transaction, "reject")}
+                      >
+                        <XCircle className="mr-1 h-4 w-4" />
+                        Tolak
+                      </Button>
                     </div>
                   </TableCell>
                 )}

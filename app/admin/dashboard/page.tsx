@@ -6,40 +6,20 @@ import { AdminLayout } from "@/components/admin/admin-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Loader2, ArrowDownCircle, ArrowUpCircle, AlertTriangle } from "lucide-react"
+import { Loader2, ArrowDownCircle, ArrowUpCircle } from "lucide-react"
 import { toast } from "sonner"
 import { formatRupiah } from "@/lib/utils"
 import { TransactionTable } from "@/components/admin/transaction-table"
 import { ExpenseForm } from "@/components/admin/expense-form"
 
-// Define the Transaction interface
-interface User {
-  id: string
-  username: string
-  full_name: string
-  kelas?: string
-  nis?: string
-}
-
-interface Transaction {
-  id: string
-  amount: number
-  description: string
-  type: "income" | "expense"
-  status: "pending" | "approved" | "rejected"
-  created_at: string
-  user?: User
-}
-
 export default function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true)
-  const [pendingTransactions, setPendingTransactions] = useState<Transaction[]>([])
-  const [approvedTransactions, setApprovedTransactions] = useState<Transaction[]>([])
-  const [rejectedTransactions, setRejectedTransactions] = useState<Transaction[]>([])
+  const [pendingTransactions, setPendingTransactions] = useState([])
+  const [approvedTransactions, setApprovedTransactions] = useState([])
+  const [rejectedTransactions, setRejectedTransactions] = useState([])
   const [totalKas, setTotalKas] = useState(0)
   const [totalExpense, setTotalExpense] = useState(0)
   const [showExpenseForm, setShowExpenseForm] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -83,160 +63,56 @@ export default function AdminDashboard() {
 
   const fetchDashboardData = async () => {
     setIsLoading(true)
-    setError(null)
-
     try {
       const token = localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token")
       if (!token) {
         throw new Error("No auth token found")
       }
 
-      // Fetch summary data first (this seems to work)
+      // Fetch pending transactions
+      const pendingResponse = await fetch("/api/admin/transactions?status=pending", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      // Fetch approved transactions
+      const approvedResponse = await fetch("/api/admin/transactions?status=approved", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      // Fetch rejected transactions
+      const rejectedResponse = await fetch("/api/admin/transactions?status=rejected", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      // Fetch summary data
       const summaryResponse = await fetch("/api/admin/summary", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       })
 
-      if (summaryResponse.ok) {
-        const summaryData = await summaryResponse.json()
-        setTotalKas(summaryData.totalKas || 0)
-        setTotalExpense(summaryData.totalExpense || 0)
-      } else {
-        console.error("Failed to fetch summary data:", summaryResponse.status)
+      if (!pendingResponse.ok || !approvedResponse.ok || !rejectedResponse.ok || !summaryResponse.ok) {
+        throw new Error("Failed to fetch data")
       }
 
-      // Try multiple approaches to fetch transaction data
-      let transactionsLoaded = false
+      const pendingData = await pendingResponse.json()
+      const approvedData = await approvedResponse.json()
+      const rejectedData = await rejectedResponse.json()
+      const summaryData = await summaryResponse.json()
 
-      // Approach 1: Fetch transactions with status filter
-      try {
-        const fetchTransactionsWithStatus = async (status: string) => {
-          const response = await fetch(`/api/admin/transactions?status=${status}`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          })
-
-          if (!response.ok) {
-            throw new Error(`Failed to fetch ${status} transactions: ${response.status}`)
-          }
-
-          const data = await response.json()
-          return data.transactions || []
-        }
-
-        const [pending, approved, rejected] = await Promise.all([
-          fetchTransactionsWithStatus("pending"),
-          fetchTransactionsWithStatus("approved"),
-          fetchTransactionsWithStatus("rejected"),
-        ])
-
-        setPendingTransactions(pending)
-        setApprovedTransactions(approved)
-        setRejectedTransactions(rejected)
-        transactionsLoaded = true
-      } catch (error) {
-        console.error("Error with approach 1:", error)
-      }
-
-      // Approach 2: Fetch all transactions and filter client-side
-      if (!transactionsLoaded) {
-        try {
-          const allTransactionsResponse = await fetch("/api/admin/all-transactions", {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          })
-
-          if (!allTransactionsResponse.ok) {
-            throw new Error(`Failed to fetch all transactions: ${allTransactionsResponse.status}`)
-          }
-
-          const allData = await allTransactionsResponse.json()
-          const allTransactions = allData.transactions || []
-
-          // Map the API response to match our Transaction interface
-          const mappedTransactions: Transaction[] = allTransactions.map((t: any) => ({
-            id: t.id.toString(),
-            amount: t.amount,
-            description: t.description,
-            type: t.type || "income", // Default to income if type is missing
-            status: t.status,
-            created_at: t.created_at,
-            user: t.user
-              ? {
-                  id: t.user.id.toString(),
-                  username: t.user.username,
-                  full_name: t.user.full_name,
-                  kelas: t.user.kelas,
-                  nis: t.user.nis,
-                }
-              : undefined,
-          }))
-
-          // Filter transactions by status
-          setPendingTransactions(mappedTransactions.filter((t) => t.status === "pending"))
-          setApprovedTransactions(mappedTransactions.filter((t) => t.status === "approved"))
-          setRejectedTransactions(mappedTransactions.filter((t) => t.status === "rejected"))
-          transactionsLoaded = true
-        } catch (error) {
-          console.error("Error with approach 2:", error)
-        }
-      }
-
-      // Approach 3: Fetch simple transactions (without joins) and filter client-side
-      if (!transactionsLoaded) {
-        try {
-          const simpleTransactionsResponse = await fetch("/api/admin/simple-transactions", {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          })
-
-          if (!simpleTransactionsResponse.ok) {
-            throw new Error(`Failed to fetch simple transactions: ${simpleTransactionsResponse.status}`)
-          }
-
-          const simpleData = await simpleTransactionsResponse.json()
-          const simpleTransactions = simpleData.transactions || []
-
-          // Map the API response to match our Transaction interface
-          const mappedTransactions: Transaction[] = simpleTransactions.map((t: any) => ({
-            id: t.id.toString(),
-            amount: t.amount,
-            description: t.description,
-            type: t.type || "income", // Default to income if type is missing
-            status: t.status,
-            created_at: t.created_at,
-            // No user data in this simplified approach
-            user: {
-              id: t.user_id?.toString() || "unknown",
-              username: "unknown",
-              full_name: "Unknown User",
-              kelas: "N/A",
-              nis: "N/A",
-            },
-          }))
-
-          // Filter transactions by status
-          setPendingTransactions(mappedTransactions.filter((t) => t.status === "pending"))
-          setApprovedTransactions(mappedTransactions.filter((t) => t.status === "approved"))
-          setRejectedTransactions(mappedTransactions.filter((t) => t.status === "rejected"))
-          transactionsLoaded = true
-        } catch (error) {
-          console.error("Error with approach 3:", error)
-        }
-      }
-
-      // If all approaches failed, show error
-      if (!transactionsLoaded) {
-        setError("Gagal memuat data transaksi. Silakan coba lagi nanti.")
-        toast.error("Gagal memuat data transaksi")
-      }
+      setPendingTransactions(pendingData.transactions || [])
+      setApprovedTransactions(approvedData.transactions || [])
+      setRejectedTransactions(rejectedData.transactions || [])
+      setTotalKas(summaryData.totalKas || 0)
+      setTotalExpense(summaryData.totalExpense || 0)
     } catch (error) {
       console.error("Error fetching dashboard data:", error)
-      setError("Gagal memuat data dashboard. Silakan coba lagi nanti.")
       toast.error("Gagal memuat data dashboard")
     } finally {
       setIsLoading(false)
@@ -250,16 +126,6 @@ export default function AdminDashboard() {
 
   const handleAddExpense = async (expenseData: { amount: number; description: string }) => {
     try {
-      if (!expenseData.amount || expenseData.amount <= 0) {
-        toast.error("Jumlah pengeluaran harus lebih dari 0")
-        return
-      }
-
-      if (!expenseData.description.trim()) {
-        toast.error("Deskripsi pengeluaran tidak boleh kosong")
-        return
-      }
-
       const token = localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token")
       if (!token) {
         throw new Error("No auth token found")
@@ -271,15 +137,11 @@ export default function AdminDashboard() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          ...expenseData,
-          type: "expense", // Ensure type is set correctly
-        }),
+        body: JSON.stringify(expenseData),
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.message || "Failed to add expense")
+        throw new Error("Failed to add expense")
       }
 
       toast.success("Pengeluaran berhasil ditambahkan")
@@ -287,7 +149,7 @@ export default function AdminDashboard() {
       fetchDashboardData()
     } catch (error) {
       console.error("Error adding expense:", error)
-      toast.error(`Gagal menambahkan pengeluaran: ${error instanceof Error ? error.message : "Unknown error"}`)
+      toast.error("Gagal menambahkan pengeluaran")
     }
   }
 
@@ -297,21 +159,6 @@ export default function AdminDashboard() {
         <div className="flex h-[80vh] items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <span className="ml-2">Memuat data...</span>
-        </div>
-      </AdminLayout>
-    )
-  }
-
-  if (error) {
-    return (
-      <AdminLayout>
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex flex-col items-center justify-center h-[50vh] text-center">
-            <AlertTriangle className="h-12 w-12 text-yellow-500 mb-4" />
-            <h2 className="text-xl font-semibold mb-2">Terjadi Kesalahan</h2>
-            <p className="text-gray-600 mb-4">{error}</p>
-            <Button onClick={fetchDashboardData}>Coba Lagi</Button>
-          </div>
         </div>
       </AdminLayout>
     )
@@ -362,11 +209,7 @@ export default function AdminDashboard() {
           </Card>
         </div>
 
-        <div className="mt-6 flex justify-between">
-          <Button onClick={fetchDashboardData} variant="outline">
-            <Loader2 className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-            Refresh Data
-          </Button>
+        <div className="mt-6 flex justify-end">
           <Button onClick={() => setShowExpenseForm(!showExpenseForm)}>
             {showExpenseForm ? "Batal" : "Tambah Pengeluaran"}
           </Button>
