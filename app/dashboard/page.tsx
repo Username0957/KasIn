@@ -17,7 +17,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import LoadingFancy from "@/components/loading-fancy";
 
 interface Transaction {
   id: string;
@@ -155,12 +154,26 @@ export default function DashboardPage() {
 
   // Show loading state while checking auth
   if (loading || !authChecked) {
-    return <LoadingFancy />;
+    return (
+      <div className="min-h-screen flex items-center justify-center dark:bg-[#121212]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-white mx-auto mb-4" />
+          <p className="text-white">Memuat...</p>
+        </div>
+      </div>
+    );
   }
 
   // If not authenticated after checking, don't render anything (redirect will happen)
   if (!isAuthenticated) {
-    return <LoadingFancy />;
+    return (
+      <div className="min-h-screen flex items-center justify-center dark:bg-[#121212]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-white mx-auto mb-4" />
+          <p className="text-white">Mengalihkan ke halaman login...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
